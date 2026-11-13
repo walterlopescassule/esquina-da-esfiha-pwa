@@ -1,28 +1,37 @@
 import { formatBRL } from "./format.js";
+import { parsePrice } from "./menu.js";
+
+export const PAYMENT_METHODS = ["Pix", "Dinheiro", "Cartão na Entrega"];
+
+/** "50" -> "R$ 50,00". Se o cliente digitou algo que não é número, mantém o texto. */
+export function formatChange(raw) {
+  const text = String(raw ?? "").trim();
+  if (!text) return "";
+  const n = parsePrice(text);
+  return Number.isFinite(n) ? formatBRL(n) : text;
+}
 
 /**
  * lines: [{ nome, qty, subtotal }]
- * Exemplo de saída:
- *   Olá, quero pedir:
- *
- *   2x Esfiha de Carne (R$ 5,98)
- *   1x Guaraná 2L (R$ 12,00)
- *
- *   Total: R$ 17,98
- *   Endereço: Rua X, 10, Bairro Y
  */
-export function buildWhatsAppMessage({ lines, total, address, notes }) {
+export function buildWhatsAppMessage({ lines, total, name, address, payment, change }) {
   const items = lines.map((l) => `${l.qty}x ${l.nome} (${formatBRL(l.subtotal)})`).join("\n");
-  const parts = [
+
+  let paymentLine = `Pagamento: ${payment}`;
+  if (payment === "Dinheiro" && String(change ?? "").trim()) {
+    paymentLine += ` (Troco para ${formatChange(change)})`;
+  }
+
+  return [
     "Olá, quero pedir:",
     "",
     items,
     "",
     `Total: ${formatBRL(total)}`,
+    `Nome: ${name.trim()}`,
     `Endereço: ${address.trim()}`,
-  ];
-  if (notes?.trim()) parts.push(`Obs: ${notes.trim()}`);
-  return parts.join("\n");
+    paymentLine,
+  ].join("\n");
 }
 
 export function buildWhatsAppUrl(phone, message) {

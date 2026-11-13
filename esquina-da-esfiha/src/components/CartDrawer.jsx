@@ -1,15 +1,39 @@
 import { useEffect, useRef, useState } from "react";
-import { MapPin, Minus, Plus, X } from "lucide-react";
+import { Banknote, CreditCard, MapPin, Minus, Plus, QrCode, User, X } from "lucide-react";
 import { formatBRL } from "../lib/format.js";
-import { buildWhatsAppMessage, buildWhatsAppUrl } from "../lib/whatsapp.js";
+import { parsePrice } from "../lib/menu.js";
+import { PAYMENT_METHODS, buildWhatsAppMessage, buildWhatsAppUrl } from "../lib/whatsapp.js";
 
 const WHATSAPP_NUMBER = import.meta.env.VITE_WHATSAPP_NUMBER;
 
+const PAYMENT_ICONS = { Pix: QrCode, Dinheiro: Banknote, "Cartão na Entrega": CreditCard };
+
+const saved = (key) => {
+  try { return localStorage.getItem(key) ?? ""; } catch { return ""; }
+};
+
+const inputClass = (invalid) =>
+  `h-14 w-full rounded-xl border-2 bg-white px-4 text-base outline-none focus:border-bordo ${
+    invalid ? "border-red-600" : "border-bordo/20"
+  }`;
+
+function FieldError({ id, children }) {
+  return children ? (
+    <p id={id} role="alert" className="mt-1.5 text-sm font-semibold text-red-700">{children}</p>
+  ) : null;
+}
+
 export default function CartDrawer({ open, onClose, lines, total, onAdd, onRemove }) {
-  const [address, setAddress] = useState(() => localStorage.getItem("esquina:address") ?? "");
-  const [notes, setNotes] = useState("");
-  const [error, setError] = useState("");
+  const [name, setName] = useState(() => saved("esquina:name"));
+  const [address, setAddress] = useState(() => saved("esquina:address"));
+  const [payment, setPayment] = useState("");
+  const [change, setChange] = useState("");
+  const [errors, setErrors] = useState({});
+
+  const nameRef = useRef(null);
   const addressRef = useRef(null);
+  const paymentRef = useRef(null);
+  const changeRef = useRef(null);
 
   // Fecha com Esc e trava a rolagem da página atrás.
   useEffect(() => {
@@ -24,18 +48,43 @@ export default function CartDrawer({ open, onClose, lines, total, onAdd, onRemov
     };
   }, [open, onClose]);
 
+  const clearError = (key) => setErrors((e) => ({ ...e, [key]: undefined }));
+
+  const validate = () => {
+    const next = {};
+    if (!name.trim()) next.name = "Informe seu nome.";
+    if (!address.trim()) next.address = "Informe rua, número e bairro para a entrega.";
+    if (!payment) next.payment = "Escolha a forma de pagamento.";
+    if (payment === "Dinheiro" && change.trim()) {
+      const n = parsePrice(change);
+      if (!Number.isFinite(n)) next.change = "Digite só o valor, por exemplo 50.";
+      else if (n < total) next.change = `O valor precisa ser maior ou igual ao total (${formatBRL(total)}).`;
+    }
+    return next;
+  };
+
   const finish = () => {
-    if (!address.trim()) {
-      setError("Informe rua, número e bairro para a entrega.");
-      addressRef.current?.focus();
+    const next = validate();
+    setErrors(next);
+
+    const first = ["name", "address", "payment", "change"].find((k) => next[k]);
+    if (first) {
+      const target = { name: nameRef, address: addressRef, payment: paymentRef, change: changeRef }[first].current;
+      target?.focus?.();
+      target?.scrollIntoView?.({ block: "center", behavior: "smooth" });
       return;
     }
     if (!WHATSAPP_NUMBER) {
-      setError("Número de WhatsApp não configurado (VITE_WHATSAPP_NUMBER).");
+      setErrors({ general: "Número de WhatsApp não configurado (VITE_WHATSAPP_NUMBER)." });
       return;
     }
-    try { localStorage.setItem("esquina:address", address); } catch { /* ignora */ }
-    const message = buildWhatsAppMessage({ lines, total, address, notes });
+
+    try {
+      localStorage.setItem("esquina:name", name);
+      localStorage.setItem("esquina:address", address);
+    } catch { /* ignora */ }
+
+    const message = buildWhatsAppMessage({ lines, total, name, address, payment, change });
     window.open(buildWhatsAppUrl(WHATSAPP_NUMBER, message), "_blank", "noopener");
   };
 
@@ -86,33 +135,114 @@ export default function CartDrawer({ open, onClose, lines, total, onAdd, onRemov
                 ))}
               </ul>
 
-              <div className="mt-4 space-y-3 pb-4">
-                <label className="block">
-                  <span className="mb-1.5 flex items-center gap-1.5 text-sm font-bold">
-                    <MapPin size={16} /> Endereço de entrega
-                  </span>
+              <div className="mt-4 space-y-4 pb-4">
+                {/* Nome */}
+                <div>
+                  <label htmlFor="cliente-nome" className="mb-1.5 flex items-center gap-1.5 text-sm font-bold">
+                    <User size={16} /> Nome
+                  </label>
                   <input
+                    id="cliente-nome"
+                    ref={nameRef}
+                    type="text"
+                    value={name}
+                    onChange={(e) => { setName(e.target.value); clearError("name"); }}
+                    placeholder="Seu nome"
+                    autoComplete="name"
+                    required
+                    aria-invalid={Boolean(errors.name)}
+                    aria-describedby={errors.name ? "erro-nome" : undefined}
+                    className={inputClass(errors.name)}
+                  />
+                  <FieldError id="erro-nome">{errors.name}</FieldError>
+                </div>
+
+                {/* Endereço */}
+                <div>
+                  <label htmlFor="cliente-endereco" className="mb-1.5 flex items-center gap-1.5 text-sm font-bold">
+                    <MapPin size={16} /> Endereço de entrega
+                  </label>
+                  <input
+                    id="cliente-endereco"
                     ref={addressRef}
                     type="text"
                     value={address}
-                    onChange={(e) => { setAddress(e.target.value); setError(""); }}
+                    onChange={(e) => { setAddress(e.target.value); clearError("address"); }}
                     placeholder="Rua, Número, Bairro"
                     autoComplete="street-address"
-                    aria-invalid={Boolean(error)}
-                    className="h-14 w-full rounded-xl border-2 border-bordo/20 bg-white px-4 text-base outline-none focus:border-bordo"
+                    required
+                    aria-invalid={Boolean(errors.address)}
+                    aria-describedby={errors.address ? "erro-endereco" : undefined}
+                    className={inputClass(errors.address)}
                   />
-                </label>
-                <label className="block">
-                  <span className="mb-1.5 block text-sm font-bold">Observações (opcional)</span>
-                  <input
-                    type="text"
-                    value={notes}
-                    onChange={(e) => setNotes(e.target.value)}
-                    placeholder="Troco para R$ 50, sem cebola…"
-                    className="h-12 w-full rounded-xl border-2 border-bordo/20 bg-white px-4 text-base outline-none focus:border-bordo"
-                  />
-                </label>
-                {error && <p role="alert" className="text-sm font-semibold text-red-700">{error}</p>}
+                  <FieldError id="erro-endereco">{errors.address}</FieldError>
+                </div>
+
+                {/* Pagamento */}
+                <div>
+                  <p id="pagamento-label" className="mb-1.5 text-sm font-bold">Forma de pagamento</p>
+                  <div
+                    ref={paymentRef}
+                    role="radiogroup"
+                    aria-labelledby="pagamento-label"
+                    aria-describedby={errors.payment ? "erro-pagamento" : undefined}
+                    tabIndex={-1}
+                    className="grid grid-cols-3 gap-2"
+                  >
+                    {PAYMENT_METHODS.map((method) => {
+                      const Icon = PAYMENT_ICONS[method];
+                      const on = payment === method;
+                      return (
+                        <button
+                          key={method}
+                          type="button"
+                          role="radio"
+                          aria-checked={on}
+                          onClick={() => {
+                            setPayment(method);
+                            clearError("payment");
+                            if (method !== "Dinheiro") { setChange(""); clearError("change"); }
+                          }}
+                          className={`flex min-h-[72px] flex-col items-center justify-center gap-1 rounded-xl border-2 px-1 py-2 text-center text-sm font-bold leading-tight transition active:scale-95 ${
+                            on
+                              ? "border-bordo bg-bordo text-white"
+                              : errors.payment
+                                ? "border-red-600 bg-white text-ink"
+                                : "border-bordo/20 bg-white text-ink"
+                          }`}
+                        >
+                          <Icon size={22} strokeWidth={2.4} aria-hidden="true" />
+                          {method}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <FieldError id="erro-pagamento">{errors.payment}</FieldError>
+                </div>
+
+                {/* Troco (só para dinheiro) */}
+                {payment === "Dinheiro" && (
+                  <div>
+                    <label htmlFor="cliente-troco" className="mb-1.5 block text-sm font-bold">
+                      Precisa de troco para quanto? (opcional)
+                    </label>
+                    <input
+                      id="cliente-troco"
+                      ref={changeRef}
+                      type="text"
+                      inputMode="decimal"
+                      value={change}
+                      onChange={(e) => { setChange(e.target.value); clearError("change"); }}
+                      placeholder="Ex.: 50"
+                      aria-invalid={Boolean(errors.change)}
+                      aria-describedby={errors.change ? "erro-troco" : undefined}
+                      className={`${inputClass(errors.change)} h-12`}
+                    />
+                    <FieldError id="erro-troco">{errors.change}</FieldError>
+                  </div>
+                )}
+
+                <FieldError>{errors.general}</FieldError>
               </div>
             </>
           )}
