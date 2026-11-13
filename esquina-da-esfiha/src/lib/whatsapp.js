@@ -1,7 +1,17 @@
 import { formatBRL } from "./format.js";
 import { parsePrice } from "./menu.js";
 
-export const PAYMENT_METHODS = ["Pix", "Dinheiro", "Cartão na Entrega"];
+export const PAYMENT_METHODS = ["Pix", "Dinheiro", "Cartão"];
+
+export const DELIVERY = "Entrega";
+export const PICKUP = "Retirar no Balcão";
+export const MODES = [DELIVERY, PICKUP];
+
+/** Texto mostrado ao cliente e enviado no WhatsApp. */
+export function paymentLabel(payment, mode = DELIVERY) {
+  if (payment === "Cartão") return mode === PICKUP ? "Cartão no Balcão" : "Cartão na Entrega";
+  return payment;
+}
 
 /** "50" -> "R$ 50,00". Se o cliente digitou algo que não é número, mantém o texto. */
 export function formatChange(raw) {
@@ -12,12 +22,14 @@ export function formatChange(raw) {
 }
 
 /**
- * lines: [{ nome, qty, subtotal }]
+ * Constrói a mensagem final do WhatsApp.
  */
-export function buildWhatsAppMessage({ lines, total, name, address, payment, change }) {
+export function buildWhatsAppMessage({ lines, total, mode = DELIVERY, name, address, payment, change }) {
   const items = lines.map((l) => `${l.qty}x ${l.nome} (${formatBRL(l.subtotal)})`).join("\n");
 
-  let paymentLine = `Pagamento: ${payment}`;
+  const placeLine = mode === PICKUP ? "Modalidade: Retirar no balcão" : `Endereço: ${address.trim()}`;
+
+  let paymentLine = `Pagamento: ${paymentLabel(payment, mode)}`;
   if (payment === "Dinheiro" && String(change ?? "").trim()) {
     paymentLine += ` (Troco para ${formatChange(change)})`;
   }
@@ -29,7 +41,7 @@ export function buildWhatsAppMessage({ lines, total, name, address, payment, cha
     "",
     `Total: ${formatBRL(total)}`,
     `Nome: ${name.trim()}`,
-    `Endereço: ${address.trim()}`,
+    placeLine,
     paymentLine,
   ].join("\n");
 }

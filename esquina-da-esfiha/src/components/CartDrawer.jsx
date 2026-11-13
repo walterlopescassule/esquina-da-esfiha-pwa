@@ -1,12 +1,13 @@
 import { useEffect, useRef, useState } from "react";
-import { Banknote, CreditCard, MapPin, Minus, Plus, QrCode, User, X } from "lucide-react";
+import { Banknote, Bike, CreditCard, MapPin, Minus, Plus, QrCode, Store, User, X } from "lucide-react";
 import { formatBRL } from "../lib/format.js";
 import { parsePrice } from "../lib/menu.js";
-import { PAYMENT_METHODS, buildWhatsAppMessage, buildWhatsAppUrl } from "../lib/whatsapp.js";
+import { DELIVERY, MODES, PAYMENT_METHODS, PICKUP, buildWhatsAppMessage, buildWhatsAppUrl, paymentLabel } from "../lib/whatsapp.js";
 
 const WHATSAPP_NUMBER = import.meta.env.VITE_WHATSAPP_NUMBER;
 
-const PAYMENT_ICONS = { Pix: QrCode, Dinheiro: Banknote, "Cartão na Entrega": CreditCard };
+const MODE_ICONS = { [DELIVERY]: Bike, [PICKUP]: Store };
+const PAYMENT_ICONS = { Pix: QrCode, Dinheiro: Banknote, Cartão: CreditCard };
 
 const saved = (key) => {
   try { return localStorage.getItem(key) ?? ""; } catch { return ""; }
@@ -24,11 +25,14 @@ function FieldError({ id, children }) {
 }
 
 export default function CartDrawer({ open, onClose, lines, total, onAdd, onRemove }) {
+  const [mode, setMode] = useState(DELIVERY);
   const [name, setName] = useState(() => saved("esquina:name"));
   const [address, setAddress] = useState(() => saved("esquina:address"));
   const [payment, setPayment] = useState("");
   const [change, setChange] = useState("");
   const [errors, setErrors] = useState({});
+
+  const isDelivery = mode === DELIVERY;
 
   const nameRef = useRef(null);
   const addressRef = useRef(null);
@@ -53,7 +57,7 @@ export default function CartDrawer({ open, onClose, lines, total, onAdd, onRemov
   const validate = () => {
     const next = {};
     if (!name.trim()) next.name = "Informe seu nome.";
-    if (!address.trim()) next.address = "Informe rua, número e bairro para a entrega.";
+    if (isDelivery && !address.trim()) next.address = "Informe rua, número e bairro para a entrega.";
     if (!payment) next.payment = "Escolha a forma de pagamento.";
     if (payment === "Dinheiro" && change.trim()) {
       const n = parsePrice(change);
@@ -81,10 +85,10 @@ export default function CartDrawer({ open, onClose, lines, total, onAdd, onRemov
 
     try {
       localStorage.setItem("esquina:name", name);
-      localStorage.setItem("esquina:address", address);
+      if (isDelivery) localStorage.setItem("esquina:address", address);
     } catch { /* ignora */ }
 
-    const message = buildWhatsAppMessage({ lines, total, name, address, payment, change });
+    const message = buildWhatsAppMessage({ lines, total, mode, name, address, payment, change });
     window.open(buildWhatsAppUrl(WHATSAPP_NUMBER, message), "_blank", "noopener");
   };
 
@@ -136,6 +140,32 @@ export default function CartDrawer({ open, onClose, lines, total, onAdd, onRemov
               </ul>
 
               <div className="mt-4 space-y-4 pb-4">
+                {/* Modalidade */}
+                <div>
+                  <p id="modalidade-label" className="mb-1.5 text-sm font-bold">Modalidade</p>
+                  <div role="radiogroup" aria-labelledby="modalidade-label" className="grid grid-cols-2 gap-2">
+                    {MODES.map((m) => {
+                      const Icon = MODE_ICONS[m];
+                      const on = mode === m;
+                      return (
+                        <button
+                          key={m}
+                          type="button"
+                          role="radio"
+                          aria-checked={on}
+                          onClick={() => { setMode(m); clearError("address"); }}
+                          className={`flex h-14 items-center justify-center gap-2 rounded-xl border-2 px-2 text-sm font-bold transition active:scale-95 ${
+                            on ? "border-bordo bg-bordo text-white" : "border-bordo/20 bg-white text-ink"
+                          }`}
+                        >
+                          <Icon size={20} strokeWidth={2.4} aria-hidden="true" />
+                          {m}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
                 {/* Nome */}
                 <div>
                   <label htmlFor="cliente-nome" className="mb-1.5 flex items-center gap-1.5 text-sm font-bold">
@@ -157,26 +187,28 @@ export default function CartDrawer({ open, onClose, lines, total, onAdd, onRemov
                   <FieldError id="erro-nome">{errors.name}</FieldError>
                 </div>
 
-                {/* Endereço */}
-                <div>
-                  <label htmlFor="cliente-endereco" className="mb-1.5 flex items-center gap-1.5 text-sm font-bold">
-                    <MapPin size={16} /> Endereço de entrega
-                  </label>
-                  <input
-                    id="cliente-endereco"
-                    ref={addressRef}
-                    type="text"
-                    value={address}
-                    onChange={(e) => { setAddress(e.target.value); clearError("address"); }}
-                    placeholder="Rua, Número, Bairro"
-                    autoComplete="street-address"
-                    required
-                    aria-invalid={Boolean(errors.address)}
-                    aria-describedby={errors.address ? "erro-endereco" : undefined}
-                    className={inputClass(errors.address)}
-                  />
-                  <FieldError id="erro-endereco">{errors.address}</FieldError>
-                </div>
+                {/* Endereço (só na entrega) */}
+                {isDelivery && (
+                  <div>
+                    <label htmlFor="cliente-endereco" className="mb-1.5 flex items-center gap-1.5 text-sm font-bold">
+                      <MapPin size={16} /> Endereço de entrega
+                    </label>
+                    <input
+                      id="cliente-endereco"
+                      ref={addressRef}
+                      type="text"
+                      value={address}
+                      onChange={(e) => { setAddress(e.target.value); clearError("address"); }}
+                      placeholder="Rua, Número, Bairro"
+                      autoComplete="street-address"
+                      required
+                      aria-invalid={Boolean(errors.address)}
+                      aria-describedby={errors.address ? "erro-endereco" : undefined}
+                      className={inputClass(errors.address)}
+                    />
+                    <FieldError id="erro-endereco">{errors.address}</FieldError>
+                  </div>
+                )}
 
                 {/* Pagamento */}
                 <div>
@@ -212,7 +244,7 @@ export default function CartDrawer({ open, onClose, lines, total, onAdd, onRemov
                           }`}
                         >
                           <Icon size={22} strokeWidth={2.4} aria-hidden="true" />
-                          {method}
+                          {paymentLabel(method, mode)}
                         </button>
                       );
                     })}
